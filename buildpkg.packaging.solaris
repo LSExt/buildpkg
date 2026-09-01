@@ -46,8 +46,8 @@ pkgvendor="http://change/me/please"
 pkgdesc="mumble mubmle... hmm someone forgot to fill this out!"
 
 # vendor & contact information
-pkgedby="Tom G. Christensen"
-email=swpkg@jupiterrise.com
+pkgedby="Luis E Limon"
+email="9660709+llimon@users.noreply.github.com"
 
 # Set some helper vars that describes arch and OS version
 arch=`uname -p`
@@ -106,7 +106,11 @@ configure_args=(--prefix=$prefix --mandir=${prefix}/${_mandir} --infodir=${prefi
 # ie: libmad-0.14.2b-1.sb-sol5.8-sparc-local
 # We hardquote it so that we can control when we want it
 # evaluated (using _upls)
-distfile='$secname-$version-$secver.tgc-$os-$build_arch-$pkgdirdesig'
+if [ "$LSE_ISA" != "" ]; then
+   distfile='$secname-$version-$secver.lse-$os-$LSE_ISA-lse'
+else
+   distfile='$secname-$version-$secver.lse-$os-$build_arch-lse'
+fi
 
 # What pkgdef file to use
 pkgdef_file=pkgdef
@@ -124,7 +128,7 @@ pkgdef_file=pkgdef
 make_pkg()
 {
     if [ $# -lt 1 ]; then
-	error $E_MISSING_ARGS make_pkg
+        error $E_MISSING_ARGS make_pkg
     fi
     local secname=$1
     local prototype=prototype.$secname
@@ -133,10 +137,26 @@ make_pkg()
     local dfile=$(_upls $distfile)
     local pname=$(get_pkgname $secname)
 
+    # Scratch area on local UFS RAM/disk to prevent pkgmk 32-bit NFS statvfs overflow
+    local local_spool="/var/tmp/tgc_spool_$$"
+    mkdir -p "$local_spool"
+
     echo "Creating package and transferring it to datastream format"
-    $PKGMK -r `pwd` -d $buildpkgbase/$pkgdir -o -f $metadir/$prototype
-    $PKGTRANS -o -s $buildpkgbase/$pkgdir $distdir/$dfile $pname
-    echo "Done. Package was created as $dfile"
+    $PKGMK -r `pwd` -d $local_spool -o -f $metadir/$prototype
+    if [ $? -eq 0 ]; then
+        $PKGTRANS -o -s $local_spool $distdir/$dfile $pname
+        echo "Done. Package was created as $dfile"
+    else
+        echo "ERROR: pkgmk failed during packaging" >&2
+    fi
+
+	 # Print spool contents for debug on errors
+    echo "--- BEGIN stage contents ---"
+    find $local_spool
+    echo "--- END   stage contents ---"
+
+    # Clean up local UFS intermediate scratch tree
+    rm -rf "$local_spool"
 }
 
 # pack_info(): Create the pkginfo file

@@ -59,8 +59,8 @@ fi
 # Define defaults
 pkgdir=${PWD##*/} # topdir under $BUILDPKG_BASE
 stagedir=$buildpkgbase/$pkgdir/stage
-srcdir=$buildpkgbase/$pkgdir/src
-patchdir=$srcdir # Allow the possibility of easily putting a load of patches in a different location
+srcdir=/opt/build
+patchdir=$buildpkgbase/$pkgdir/src # Allow the possibility of easily putting a load of patches in a different location
 metadir=$buildpkgbase/$pkgdir/meta
 distdir=$buildpkgbase/distfiles/beta
 topsrcdir=$topdir-$version # it may be necessary to override this
@@ -208,6 +208,60 @@ error_txt[$E_MISSING_EXE]="Executable is missing"
 error_txt[$E_MISSING_CHGLOG]="ChangeLog is missing"
 error_txt[$E_MISSING_CHGLOGV]="Did not find ChangeLog entry for ${version}-${pkgver}"
 
+
+# Reject the build instantly if TARGET_CPU is unset or empty
+if [ -z "${TARGET_CPU}" ]; then
+ echo "======================================================================" >&2
+ echo "ERROR: TARGET_CPU is not defined!" >&2
+ echo "You must set TARGET_CPU before building LSE packages." >&2
+ echo "" >&2
+ echo "Usage: export TARGET_CPU=\"v7\" | \"v8\" | \"v9\"" >&2
+ echo "" >&2
+ echo "  v7 (sun4c) : SPARCstation 1, 1+, 2, IPC, IPX" >&2
+ echo "  v8 (sun4m) : SPARCstation 4, 5, 10, 20, LX, Classic, Voyager" >&2
+ echo "  v9 (sun4u) : Ultra 1, 2, 5, 10, 30, 60, E250, E450" >&2
+ echo "" >&2
+ echo "Note: Binaries run on the target ISA and upwards." >&2
+ echo "  * A v8 binary will NOT work on v7 hardware (causes SIGILL)." >&2
+ echo "  * A v7 binary will run on v8 and v9 hardware at the cost of execution speed." >&2
+ echo "======================================================================" >&2
+ exit 1
+fi
+
+# Map TARGET_CPU to GCC flags and package architecture tags
+case "${TARGET_CPU}" in
+    v7|sparcv7)
+        export GCC_MCPU="-mcpu=v7"
+        export LSE_ISA="sparcv7"
+        ;;
+    v8|sparcv8)
+        export GCC_MCPU="-mcpu=v8"
+        export LSE_ISA="sparcv8"
+        ;;
+    v9|sparcv9)
+        export GCC_MCPU="-mcpu=v9 -m32"
+        export LSE_ISA="sparcv9"
+        ;;
+    *)
+        echo "ERROR: Invalid TARGET_CPU '${TARGET_CPU}'!" >&2
+        echo "Allowed values: v7, v8, v9 (or sparcv7, sparcv8, sparcv9)" >&2
+        exit 1
+        ;;
+esac
+
+echo "--> LSE Build Target: ${LSE_ISA} (GCC flags: ${GCC_MCPU})"
+
+# Global LSE Environment Settings
+export CPPFLAGS="-I$prefix/include -include $prefix/include/compat/snprintf_compat.h"
+export CFLAGS="-O2 -mcpu=${TARGET_CPU:-v7}"
+export LDFLAGS="-L$prefix/lib -R$prefix/lib -static-libgcc"
+#
+# In order to remove the ligcc_s dependency we include it as a static object
+LIBGCC_A=$(gcc -mcpu=${TARGET_CPU:-v7} -print-libgcc-file-name)
+#export LIBS="-lsnprintf -lposix4 ${LIBGCC_A}"
+export LIBS="-lposix4 $prefix/lib/libsnprintf.a ${LIBGCC_A}"
+
+
 #####################################################
 # Helper functions
 #####################################################
@@ -321,6 +375,7 @@ get_source_path()
 	    else
 		# Not an url
 		[ -r "$srcdir/$file" ] && path_return="$srcdir"
+		[ -r "$patchdir/$file" ] && path_return="$patchdir"
 		[ -r "$srcfiles/$file" ] && path_return="$srcfiles"
 	    fi
 	else # abs path
@@ -330,6 +385,7 @@ get_source_path()
     # No path given
     if [ -z "$path" ]; then
 	[ -r "$srcdir/$file" ] && path_return="$srcdir"
+	[ -r "$patchdir/$file" ] && path_return="$patchdir"
 	[ -r "$srcfiles/$file" ] && path_return="$srcfiles"
     fi
 
