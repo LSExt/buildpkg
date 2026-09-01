@@ -97,7 +97,7 @@ _os=$(${__uname} -sr|${__sed} -e 's/ //g' -e 's/\.//g'|${__tr} '[A-Z]' '[a-z]')
 # pkg information.
 # The following 3 vars can be used when constructing pkg metadata
 # Override as necessary.
-pkgprefix=SB
+pkgprefix=LSE
 pkgname=$pkgprefix$topdir # overriding this will be common
 name=$topdir # as will this ditto
 
@@ -252,14 +252,14 @@ esac
 echo "--> LSE Build Target: ${LSE_ISA} (GCC flags: ${GCC_MCPU})"
 
 # Global LSE Environment Settings
-export CPPFLAGS="-I$prefix/include -include $prefix/include/compat/snprintf_compat.h"
+export CPPFLAGS="-I$prefix/include"
 export CFLAGS="-O2 -mcpu=${TARGET_CPU:-v7}"
-export LDFLAGS="-L$prefix/lib -R$prefix/lib -static-libgcc"
+export LDFLAGS="-L$prefix/lib -R$prefix/lib"
 #
-# In order to remove the ligcc_s dependency we include it as a static object
-LIBGCC_A=$(gcc -mcpu=${TARGET_CPU:-v7} -print-libgcc-file-name)
-#export LIBS="-lsnprintf -lposix4 ${LIBGCC_A}"
-export LIBS="-lposix4 $prefix/lib/libsnprintf.a ${LIBGCC_A}"
+#export LIBS="-lposix4 -Wl,-u,__register_frame_info -Wl,-u,__deregister_frame_info -lsnprintf"
+#export LIBS="-lposix4 -Wl,/usr/tgcware/lib/libsnprintf.a"
+export LIBS="-lposix4"
+
 
 
 #####################################################
