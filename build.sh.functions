@@ -88,7 +88,8 @@ timestamp()
 log_start()
 {
     local func=$1
-    build_sh_logfile=${topdir}-${version}_${pkgver}-${os}-${build_arch}-${func}-$(timestamp).log
+    node_name=$(uname -n)
+    build_sh_logfile=${topdir}-${version}_${pkgver}-${os}-${build_arch}-${func}-$(timestamp)-${node_name}.log
 
     if [ $autolog -eq 1 ]; then
 	if [ -z "$(${__expr} "$nolog" : ".*\($func\)")" ]; then

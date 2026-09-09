@@ -137,6 +137,9 @@ make_pkg()
     local dfile=$(_upls $distfile)
     local pname=$(get_pkgname $secname)
 
+    # Make sure we have where to store the generated file
+    mkdir -p $distdir
+
     # Scratch area on local UFS RAM/disk to prevent pkgmk 32-bit NFS statvfs overflow
     local local_spool="/var/tmp/tgc_spool_$$"
     mkdir -p "$local_spool"

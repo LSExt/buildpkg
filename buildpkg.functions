@@ -56,13 +56,15 @@ fi
 # Define tools programs in __ prefixed namespace
 . $BUILDPKG_SCRIPTS/buildpkg.tools
 
+uname_r=`uname -r`
+os_release="${uname_r/5/2}"
 # Define defaults
 pkgdir=${PWD##*/} # topdir under $BUILDPKG_BASE
 stagedir=$buildpkgbase/$pkgdir/stage
 srcdir=/opt/build
 patchdir=$buildpkgbase/$pkgdir/src # Allow the possibility of easily putting a load of patches in a different location
 metadir=$buildpkgbase/$pkgdir/meta
-distdir=$buildpkgbase/distfiles/beta
+distdir=$buildpkgbase/distfiles/$os_release
 topsrcdir=$topdir-$version # it may be necessary to override this
 
 srcfiles=$buildpkgbase/srcfiles
@@ -254,12 +256,9 @@ echo "--> LSE Build Target: ${LSE_ISA} (GCC flags: ${GCC_MCPU})"
 # Global LSE Environment Settings
 export CPPFLAGS="-I$prefix/include"
 export CFLAGS="-O2 -mcpu=${TARGET_CPU:-v7}"
+export CXXFLAGS="-O2 -mcpu=${TARGET_CPU:-v7}"
 export LDFLAGS="-L$prefix/lib -R$prefix/lib"
-#
-#export LIBS="-lposix4 -Wl,-u,__register_frame_info -Wl,-u,__deregister_frame_info -lsnprintf"
-#export LIBS="-lposix4 -Wl,/usr/tgcware/lib/libsnprintf.a"
 export LIBS="-lposix4"
-
 
 
 #####################################################
@@ -917,7 +916,8 @@ generic_build()
     if [ $? -ne 0 ]; then
 	error $E_BAD_CONFIG generic_build
     fi
-    ${__make} ${make_build_opts} $(_upls $make_build_target)
+    cpu_cnt=`expr \`/usr/sbin/psrinfo | wc -l\` + 1`
+    ${__make} -j${cpu_cnt} ${make_build_opts} $(_upls $make_build_target)
     if [ $? -ne 0 ]; then
 	error $E_BAD_MAKE generic_build
     fi
