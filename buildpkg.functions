@@ -256,7 +256,7 @@ echo "--> LSE Build Target: ${LSE_ISA} (GCC flags: ${GCC_MCPU})"
 # Global LSE Environment Settings
 export CPPFLAGS="-I$prefix/include"
 export CFLAGS="-O2 -mcpu=${TARGET_CPU:-v7}"
-export CXXFLAGS="-O2 -mcpu=${TARGET_CPU:-v7}"
+export CXXFLAGS="-O2 -mcpu=${TARGET_CPU:-v7} -fpermissive"
 export LDFLAGS="-L$prefix/lib -R$prefix/lib"
 export LIBS="-lposix4"
 
@@ -951,6 +951,42 @@ generic_build_perl()
     if [ "$maketest" -eq 1 ]; then
         ${__make} test
     fi
+}
+
+# Usage: validate_staged_files "RELATIVE_DIR" "${FILES_ARRAY[@]}"
+validate_staged_files()
+{
+    local rel_path="$1"
+    shift
+    local files=("$@")
+
+    if [ ${#files[@]} -eq 0 ]; then
+        echo "BUILD ERROR: No files passed to validate_staged_files." >&2
+        return 1
+    fi
+
+    local missing_count=0
+
+    for file in "${files[@]}"; do
+        # Handle trailing slash formatting cleanly
+        local target_file="${rel_path}/${file}"
+        target_file=$(echo "$target_file" | sed 's#//#/#g')
+
+        if [ ! -f "$target_file" ]; then
+            echo "BUILD ERROR: Missing binary/file \`$target_file\` in staging." >&2
+            missing_count=$((missing_count + 1))
+        elif [ ! -s "$target_file" ]; then
+            echo "BUILD ERROR: File \`$target_file\` exists in staging but is 0 bytes (truncated)." >&2
+            missing_count=$((missing_count + 1))
+        fi
+    done
+
+    if [ $missing_count -gt 0 ]; then
+        echo "FATAL: Validation failed for $missing_count required asset(s)." >&2
+        exit 1
+    fi
+
+    return 0
 }
 
 # makeinstall(): Generic make install ripped from rpm
