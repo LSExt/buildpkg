@@ -46,7 +46,7 @@ pkgvendor="http://change/me/please"
 pkgdesc="mumble mubmle... hmm someone forgot to fill this out!"
 
 # vendor & contact information
-pkgedby="Luis E Limon"
+pkgedby="Luis Enrique Limon"
 email="9660709+llimon@users.noreply.github.com"
 
 # Set some helper vars that describes arch and OS version

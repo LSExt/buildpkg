@@ -69,8 +69,8 @@ topsrcdir=$topdir-$version # it may be necessary to override this
 
 srcfiles=$buildpkgbase/srcfiles
 
-pkgdirdesig=tgcware # topinstalldir suffix
-topinstalldir=/usr/$pkgdirdesig
+pkgdirdesig=lse # topinstalldir suffix
+topinstalldir=/usr/local/$pkgdirdesig
 prefix=$topinstalldir
 metainstalldir=$topinstalldir
 
@@ -257,7 +257,7 @@ echo "--> LSE Build Target: ${LSE_ISA} (GCC flags: ${GCC_MCPU})"
 export CPPFLAGS="-I$prefix/include"
 export CFLAGS="-O2 -mcpu=${TARGET_CPU:-v7}"
 export CXXFLAGS="-O2 -mcpu=${TARGET_CPU:-v7} -fpermissive"
-export LDFLAGS="-L$prefix/lib -R$prefix/lib"
+export LDFLAGS="-L$prefix/lib -Wl,-rpath,$prefix/lib"
 export LIBS="-lposix4"
 
 
@@ -294,18 +294,18 @@ setdir()
 {
     local dir=$1
     case $dir in
-	'source')   dir="$srcdir/$topsrcdir";;
-	'stage')    dir="$stagedir";;
-    esac
-    echo "Switching to $dir"
-    if [ -z "$dir" ]; then
-	error $E_BAD_DIR setdir
-    fi
-    if [ -d "$dir" ]; then
-	cd "$dir"
-    else
-	error $E_BAD_DIR setdir
-    fi
+	 'source')   dir="$srcdir/$topsrcdir";;
+	 'stage')    dir="$stagedir";;
+     esac
+         echo "Switching to $dir"
+         if [ -z "$dir" ]; then
+	          error $E_BAD_DIR setdir
+         fi
+         if [ -d "$dir" ]; then
+	          cd "$dir" || exit 1
+         else
+	          error $E_BAD_DIR setdir
+         fi
 }
 
 # patch(): patch unpacked source
@@ -345,6 +345,11 @@ patch()
 get_source_filename()
 {
     local source=$1
+
+    # Remove trailing /download or /download/ if present (sourceforge)
+    source="${source%/download}"
+    source="${source%/download/}"
+
     local file="${source##*/}" # Extract filename part
 
     if [ -z "$file" ]; then
@@ -892,32 +897,54 @@ generic_prep()
     fi
 }
 
+##
+## For those moments when we need to separate configure and build.
+generic_run_configure()
+{
+    local my_ac_overrides="$platform_ac_overrides $ac_overrides"
+
+    local acvar
+    for acvar in $my_ac_overrides; do
+        export $acvar
+    done
+    echo $__configure "${configure_args[@]}"
+    $__configure "${configure_args[@]}"
+}
+
 # generic_build(): Take the necessary steps to build already prepared source
 # params: $1 = dir to descend to *inside* "source" - optional
 generic_build()
 {
     local my_ac_overrides="$platform_ac_overrides $ac_overrides"
+    
     setdir ${srcdir}/${topsrcdir}/$1
 
+
+    echo "Build directory `pwd`"
+
+    # Report settings
+    echo "Building with FLAGS:"
+    echo "LDFLAGS=${LDFLAGS}" 
+    echo "CFLAGS=${CFLAGS}" 
+    echo "CPPFLAGS=${CPPFLAGS}" 
+    echo "CXXFLAGS=${CXXFLAGS}" 
+    echo "LIBS=${LIBS}" 
+
     if [ $no_configure -eq 0 ]; then
-	if [ $generic_configure -eq 1 ]; then
-	    local acvar
-	    for acvar in $my_ac_overrides
-	    do
-		export $acvar
-	    done
-	    echo $__configure "${configure_args[@]}"
-	    $__configure "${configure_args[@]}"
-	else
-	    # Platform specific configure run
-	    run_configure
-	fi
+        if [ $generic_configure -eq 1 ]; then
+            generic_run_configure
+        else
+            # Platform specific configure run
+            run_configure
+        fi
     fi
     if [ $? -ne 0 ]; then
-	error $E_BAD_CONFIG generic_build
+        error $E_BAD_CONFIG generic_build
     fi
     cpu_cnt=`expr \`/usr/sbin/psrinfo | wc -l\` + 1`
-    ${__make} -j${cpu_cnt} ${make_build_opts} $(_upls $make_build_target)
+
+    # if max_build_cpus is defined override our resource based builder CPUS
+    ${__make} -j${max_build_cpus:-$cpu_cnt} "${make_build_opts[@]}" $(_upls $make_build_target)
     if [ $? -ne 0 ]; then
 	error $E_BAD_MAKE generic_build
     fi
@@ -954,6 +981,12 @@ generic_build_perl()
 }
 
 # Usage: validate_staged_files "RELATIVE_DIR" "${FILES_ARRAY[@]}"
+# Supports pattern matching:
+# validate_staged_files ${stagedir} \
+#    "${prefix}/${_bindir}/gcc" \
+#    "${lprefix}/lib/libstdc++.so.*" \
+#    "${lprefix}/lib/libgnat-*.so" \
+#    "${lprefix}/lib/libgfortran.so.*"
 validate_staged_files()
 {
     local rel_path="$1"
@@ -967,19 +1000,39 @@ validate_staged_files()
 
     local missing_count=0
 
-    for file in "${files[@]}"; do
-        # Handle trailing slash formatting cleanly
-        local target_file="${rel_path}/${file}"
-        target_file=$(echo "$target_file" | sed 's#//#/#g')
+    # Ensure globbing behaves predictably when no files match
+    shopt -s nullglob 2>/dev/null || setopt NULL_GLOB 2>/dev/null
 
-        if [ ! -f "$target_file" ]; then
-            echo "BUILD ERROR: Missing binary/file \`$target_file\` in staging." >&2
-            missing_count=$((missing_count + 1))
-        elif [ ! -s "$target_file" ]; then
-            echo "BUILD ERROR: File \`$target_file\` exists in staging but is 0 bytes (truncated)." >&2
+    for pattern in "${files[@]}"; do
+        # Format target path cleanly
+        # Remove tailing and leading /
+        local target_pattern="${rel_path%/}/${pattern#/}"
+        echo "Validating $target_pattern"
+
+        # Expand wildcards into array
+        local matches=($target_pattern)
+        local found=0
+
+        for match in "${matches[@]}"; do
+            if [ -s "$match" ]; then
+                found=1
+                break
+            fi
+        done
+
+        if [ $found -eq 0 ]; then
+            # Check if matching files were found but were 0-bytes
+            if [ ${#matches[@]} -gt 0 ]; then
+                echo "BUILD ERROR: File pattern \`$pattern\` matched empty (0 byte) file(s) in staging." >&2
+            else
+                echo "BUILD ERROR: Missing binary/file matching pattern \`$pattern\` in staging." >&2
+            fi
             missing_count=$((missing_count + 1))
         fi
     done
+
+    # Reset nullglob behavior if supported
+    shopt -u nullglob 2>/dev/null || true
 
     if [ $missing_count -gt 0 ]; then
         echo "FATAL: Validation failed for $missing_count required asset(s)." >&2
@@ -988,7 +1041,6 @@ validate_staged_files()
 
     return 0
 }
-
 # makeinstall(): Generic make install ripped from rpm
 # params: $@ passed directly to make install
 makeinstall()
@@ -1099,7 +1151,7 @@ generic_install_perl()
 	# but that will break buildpkg since they are processed
 	# later and the names thus change leaving pkgdef broken
         $d =~ /\Q$_\E/ && return
-            for qw|/etc /usr/tgcware/bin /usr/tgcware/share|;
+            for qw|/etc /usr/lse/bin /usr/lse/share|;
 
         $dirs[@dirs] = $_;
         }
