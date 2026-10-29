@@ -256,7 +256,8 @@ echo "--> LSE Build Target: ${LSE_ISA} (GCC flags: ${GCC_MCPU})"
 # Global LSE Environment Settings
 export CPPFLAGS="-I$prefix/include"
 export CFLAGS="-O2 -mcpu=${TARGET_CPU:-v7}"
-export CXXFLAGS="-O2 -mcpu=${TARGET_CPU:-v7} -fpermissive"
+# We add -Wno-return-type because the X11 headers are very old in Solaris and the standards has changed
+export CXXFLAGS="-O2 -mcpu=${TARGET_CPU:-v7} -fpermissive -Wno-return-type"
 export LDFLAGS="-L$prefix/lib -Wl,-rpath,$prefix/lib"
 export LIBS="-lposix4"
 
